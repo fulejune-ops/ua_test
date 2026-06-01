@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ERP: Облік замовлень</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; }
+        .card { box-shadow: 0 4px 6px rgba(0,0,0,0.1); border: none; }
+    </style>
+</head>
+<body>
+<div class="container py-5">
+    <h1 class="mb-5 text-center text-primary">Модуль обліку замовлень (ERP)</h1>
+
+    <div class="row g-4">
+        <div class="col-md-4">
+            <div class="card p-4 h-100">
+                <h4 class="mb-3">1. Новий клієнт</h4>
+                <form id="clientForm">
+                    <input type="text" id="clientName" class="form-control mb-2" placeholder="Ім'я клієнта" required>
+                    <input type="email" id="clientEmail" class="form-control mb-3" placeholder="Email" required>
+                    <button type="submit" class="btn btn-success w-100">Створити клієнта</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card p-4 h-100">
+                <h4 class="mb-3">2. Новий товар</h4>
+                <form id="productForm">
+                    <input type="text" id="productName" class="form-control mb-2" placeholder="Назва товару" required>
+                    <input type="number" id="productPrice" class="form-control mb-3" placeholder="Ціна" step="0.01" required>
+                    <button type="submit" class="btn btn-success w-100">Створити товар</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card p-4 h-100 border-primary">
+                <h4 class="mb-3 text-primary">3. Оформити замовлення</h4>
+                <form id="orderForm">
+                    <input type="number" id="orderClientId" class="form-control mb-2" placeholder="ID клієнта" required>
+                    <input type="text" id="orderProductIds" class="form-control mb-3" placeholder="ID товарів (через кому, напр: 1, 2)" required>
+                    <button type="submit" class="btn btn-primary w-100">Створити замовлення</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card p-4 border-info">
+                <h4 class="mb-3 text-info">4. Список замовлень клієнта</h4>
+                <form id="getOrdersForm" class="d-flex gap-3 align-items-center">
+                    <input type="number" id="searchClientId" class="form-control w-25" placeholder="ID клієнта" required>
+                    <button type="submit" class="btn btn-info text-white px-4">Отримати замовлення</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-5">
+        <h4>Відповідь сервера:</h4>
+        <div id="alertBox" class="alert d-none" role="alert"></div>
+        <div id="uiResult" class="d-none mt-3"></div>
+    </div>
+</div>
+
+<script>
+    const alertBox = document.getElementById('alertBox');
+    const uiResult = document.getElementById('uiResult');
+
+    // Відображення сирого JSON (для створення сутностей)
+    function showRawJSON(message, data, alertClass) {
+        alertBox.className = `alert ${alertClass}`;
+        alertBox.textContent = message;
+
+        uiResult.className = "bg-dark text-success p-3 rounded mt-3";
+        uiResult.innerHTML = `<pre class="mb-0 text-light">${JSON.stringify(data, null, 2)}</pre>`;
+    }
+
+    // Універсальна функція POST
+    async function sendData(url, payload) {
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json();
+
+            if (!response.ok) throw data;
+            showRawJSON('Успішно створено!', data, 'alert-success');
+        } catch (error) {
+            showRawJSON('Помилка валідації або виконання!', error, 'alert-danger');
+        }
+    }
+
+    // 1. Клієнт
+    document.getElementById('clientForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        sendData('/api/clients/', {
+            name: document.getElementById('clientName').value,
+            email: document.getElementById('clientEmail').value
+        });
+    });
+
+    // 2. Товар
+    document.getElementById('productForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        sendData('/api/products/', {
+            name: document.getElementById('productName').value,
+            price: document.getElementById('productPrice').value
+        });
+    });
+
+    // 3. Замовлення
+    document.getElementById('orderForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        sendData('/api/orders/', {
+            client: parseInt(document.getElementById('orderClientId').value),
+            product_ids: document.getElementById('orderProductIds').value.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id))
+        });
+    });
+
+    // 4. Отримання замовлень (Красивий UI замість JSON)
+    document.getElementById('getOrdersForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const clientId = document.getElementById('searchClientId').value;
+
+        try {
+            const response = await fetch(`/api/clients/${clientId}/orders/`);
+            const data = await response.json();
+
+            if (!response.ok) throw data;
+
+            if (data.length === 0) {
+                alertBox.className = 'alert alert-info';
+                alertBox.textContent = 'У цього клієнта ще немає замовлень.';
+                uiResult.classList.add('d-none');
+                return;
+            }
+
+            alertBox.className = 'alert alert-success';
+            alertBox.textContent = `Знайдено замовлень: ${data.length} (Клієнт: ${data[0].client.name})`;
+
+            // Генеруємо нормальні картки замість сирого коду
+            let html = '<div class="row g-3">';
+            data.forEach(order => {
+                let date = new Date(order.created_at).toLocaleString('uk-UA');
+                let productsList = order.products.map(p => `<li>${p.name} — <strong>${p.price} ₴</strong></li>`).join('');
+
+                html += `
+                <div class="col-md-6">
+                    <div class="card bg-white border-secondary h-100 shadow-sm">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                            <strong class="text-primary">Замовлення №${order.id}</strong>
+                            <span class="text-muted small">${date}</span>
+                        </div>
+                        <div class="card-body">
+                            <h5 class="mb-3 text-success">Сума: ${order.total_amount} ₴</h5>
+                            <p class="mb-1 text-muted"><strong>Куплені товари:</strong></p>
+                            <ul class="mb-0">
+                                ${productsList}
+                            </ul>
+                        </div>
+                    </div>
+                </div>`;
+            });
+            html += '</div>';
+
+            uiResult.className = "mt-3";
+            uiResult.innerHTML = html;
+
+        } catch (error) {
+            showRawJSON('Помилка при пошуку!', error, 'alert-danger');
+        }
+    });
+</script>
+</body>
+</html>
